@@ -184,7 +184,6 @@ define
       pp_variableL: seq1(variableN pla(&())
       pp_kwValueL:seq1(alt('pp_true' 'pp_false' 'pp_unit') pla(&())
       pp_integer: [pos
-                   nla(pp_float)
                    opt("~")
                    alt(
                       nzDigit|star(digit)
@@ -196,7 +195,7 @@ define
       pp_float: [pos
                  opt("~")
                  plus(digit)
-                 &.|star(digit)
+                 seq1(&. nla([&. &.]))|star(digit)
                  opt([alt(&e &E) opt("~") plus(digit)])
                  pos] #fun{$ [P1 S M D E P2]}fFloat({String.toFloat {Flatten [S M D E]}} {MkPos P1 P2}) end
 
@@ -339,7 +338,7 @@ define
               lvlC
               )
       dotted:[lvlD plus(
-                      [alt('.' '^') lvlD]#fun{$ [Op S2 P2]}fun{$ P1 S1}fOpApply(Op.1 [S1 S2] {MkPos P1 P2})end end
+                      [alt('.' '^') alt(feature lvlD)]#fun{$ [Op S2 P2]}fun{$ P1 S1}fOpApply(Op.1 [S1 S2] {MkPos P1 P2})end end
                       )]#fun{$ [P1 S1 Ms]}{FoldL Ms fun{$ S M}{M P1 S}end S1}end
       lvlC:alt(
               dotted
@@ -382,8 +381,8 @@ define
                   [pB 'skip' pE]#fun{$ [P1 _ P2]}fSkip({MkPos P1 P2})end
                   [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
                   [pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
-                  feature
                   float
+                  feature
                   )
       internalIf:[phrase 'then' inPhrase optElse]#fun{$ [S1 _ S2 S3]}fBoolCase(S1 S2 S3 unit)end
       internalCase:[phrase 'of' caseClauses optElse]#fun{$ [S1 _ Cs S2]}fCase(S1 Cs S2 unit)end
