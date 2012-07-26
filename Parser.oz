@@ -81,41 +81,40 @@ define
            "\\ifdef" "\\ifndef" "\\else" "\\endif"
           ]
    RulesL=
-   {Append
-    for K in OzKW collect:C do
-       KA={String.toAtom &p|&p|&_|K}
-       KB={String.toAtom K} in
-       {C
-        KA#(
-            [pos K nla(alNum) pos] #fun{$ [P1 _ _ P2]} fKeyword(KB {MkPos P1 P2}) end
-           )
-       }
-       {C KB#seq2(whiteSpace KA)}
-    end
-    for S in OzSymb collect:C do
-       SA={String.toAtom &p|&p|&_|S}
-       SB={String.toAtom S} in
-       {C
-        SA#(
-            [
-             pos
-             nla(alt(
-                    for S2 in OzSymb collect:C do
-                       if {List.isPrefix S S2} andthen S\=S2 then
-                          {C{String.toAtom S2}}
-                       end
-                    end))
-             case S
-             of &\\|&=|_ then S
-             [] &\\|_ then [S nla(alNum)]
-             else S
-             end
-             pos
-            ]#fun{$ [P1 _ _ P2]}fKeyword(SB {MkPos P1 P2}) end
-           )
-       }
-       {C SB#seq2(whiteSpace SA)}
-    end
+   {Flatten
+    [
+     {Map OzKW fun{$ K}
+                  KA={String.toAtom &p|&p|&_|K}
+                  KB={String.toAtom K} in
+                  KA#([pos K nla(alNum) pos]#fun{$ [P1 _ _ P2]} fKeyword(KB {MkPos P1 P2}) end)
+               end}
+     {Map OzKW fun{$ K}
+                  KA={String.toAtom &p|&p|&_|K}
+                  KB={String.toAtom K} in
+                  KB#seq2(whiteSpace KA)
+               end}
+     {Map OzSymb fun{$ S}
+                    SA={String.toAtom &p|&p|&_|S}
+                    SB={String.toAtom S} in
+                    SA#(
+                        [
+                         pos
+                         nla(alt({Map {Filter OzSymb fun{$ S2}{List.isPrefix S S2} andthen S\=S2 end} String.toAtom}))
+                         case S
+                         of &\\|&=|_ then S
+                         [] &\\|_ then [S nla(alNum)]
+                         else S
+                         end
+                         pos
+                        ]#fun{$ [P1 _ _ P2]}fKeyword(SB {MkPos P1 P2}) end
+                       )
+                 end}
+     {Map OzSymb fun{$ S}
+                    SA={String.toAtom &p|&p|&_|S}
+                    SB={String.toAtom S} in
+                    SB#seq2(whiteSpace SA)
+                 end}
+    ]
    }
    SpecialChars=t(&a:&\a &b:&\b &f:&\f &n:&\n &r:&\r &t:&\t &v:&\v)
    KWVal=k('unit':unit 'true':true 'false':false)
