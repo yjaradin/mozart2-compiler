@@ -25,21 +25,35 @@
 functor
 import
    PEG(translate:Translate)
+   Open
 export
    file:ParseFile
    virtualString:ParseVS
 define
-   fun lazy {MkContext S F L C R TG D CS Next}
+   fun{FileName Context FN}
+      case FN
+      of &/|_ then FN
+      else
+         {Append Context FN}
+      end
+   end
+   fun{ReadFile Context FN}
+      {{New Open.file init(name:{FileName Context FN})} read(list:$ size:all)}
+   end
+   fun{FileContext Context FN}
+      {Reverse {List.dropWhile {Reverse {FileName Context FN}} fun{$ C}C\=&/ end}}
+   end
+   fun lazy {MkContext S F L C R TG D CS FS FC Next}
       ctx(valid: true
           value: case S
                  of nil then
                     Next#eof
                  [] &\n|T then
-                    {MkContext T F L+1 0 false TG D CS Next}#&\n
+                    {MkContext T F L+1 0 false TG D CS FS FC Next}#&\n
                  [] H|T andthen R then
-                    {MkContext T F L+1 0 H==&\r TG D CS Next}#H
+                    {MkContext T F L+1 0 H==&\r TG D CS FS FC Next}#H
                  [] H|T then
-                    {MkContext T F L C+1 H==&\r TG D CS Next}#H
+                    {MkContext T F L C+1 H==&\r TG D CS FS FC Next}#H
                  end
           grammar: TG
           cache: {Dictionary.new}
@@ -47,8 +61,22 @@ define
           defines:D
           condStack:CS
           f:F l:L c:C r:R
-          rebind:fun{$ TG F L C R TG D CS}
-                    {MkContext S F L C R TG D CS Next}
+          fileStack:FS
+          fileContext:FC
+          rebind:fun{$ Opts}
+                    {MkContext
+                     S
+                     {CondSelect Opts file F}
+                     {CondSelect Opts line L}
+                     {CondSelect Opts column C}
+                     {CondSelect Opts crSeen R}
+                     {CondSelect Opts grammar TG}
+                     {CondSelect Opts defines D}
+                     {CondSelect Opts condStack CS}
+                     {CondSelect Opts fileStack FS}
+                     {CondSelect Opts fileContext FC}
+                     Next
+                    }
                  end
          )
    end
@@ -118,6 +146,24 @@ define
    }
    SpecialChars=t(&a:&\a &b:&\b &f:&\f &n:&\n &r:&\r &t:&\t &v:&\v)
    KWVal=k('unit':unit 'true':true 'false':false)
+   fun{Nest CanHaveElse}
+      proc{$ CIn SIn COut SOut}
+         SOut=SIn
+         if CIn.valid then
+            COut={CIn.rebind o(condStack:CanHaveElse|CIn.condStack)}
+         else
+            COut=CIn
+         end
+      end
+   end
+   proc{Unnest CIn SIn COut SOut}
+      SOut=SIn
+      if CIn.valid then
+         COut={CIn.rebind o(condStack:CIn.condStack.2)}
+      else
+         COut=CIn
+      end
+   end
    Rules=
    g(
       %% LEXICAL ANALYSIS %%
@@ -125,7 +171,7 @@ define
                    COut=CIn
                    SOut=pos(CIn.f CIn.l CIn.c)
                 end
-      lineStart: is(pos fun{$ pos(_ _ C)}C==0 end)
+      lineStart: alt(is(pos fun{$ pos(_ _ C)}C==0 end) nla(wc))
 
       %% character classes %%
       ucLetter:  is(wc Char.isUpper)
@@ -171,6 +217,7 @@ define
                                                         end
                     )
       keyword: alt({Map OzKW fun{$ S}{String.toAtom &p|&p|&_|S}end})
+      symbol: alt({Map OzSymb fun{$ S}{String.toAtom &p|&p|&_|S}end})
       atomN: alt(
                 [nla(keyword) pos lcLetter star(alNum) pos] #fun{$ [_ P1 H T P2]} fAtom({String.toAtom H|T} {MkPos P1 P2}) end
                 [pos &' star(atomChar) &' pos]              #fun{$ [P1 _ L _ P2]} fAtom({String.toAtom L  } {MkPos P1 P2}) end
@@ -220,19 +267,136 @@ define
       whiteToEOL: [pp_whiteSpace star(alt(&\r &\n)) lineStart]
 
       %% pre-processing %%
-      preprocessor: alt(
-                       ['pp_\\line'   pp_whiteSpace pp_integer pp_whiteSpace fileName whiteToEOL]
-                       ['pp_\\line'   pp_whiteSpace fileName whiteToEOL]
-                       ['pp_\\insert' pp_whiteSpace fileName whiteToEOL]
-                       ['pp_\\define' pp_whiteSpace pp_variable whiteToEOL]
-                       ['pp_\\undef'  pp_whiteSpace pp_variable whiteToEOL]
-                       ['pp_\\ifdef'  pp_whiteSpace pp_variable whiteToEOL]
-                       ['pp_\\ifndef' pp_whiteSpace pp_variable whiteToEOL]
-                       ['pp_\\else'   whiteToEOL]
-                       ['pp_\\endif'  whiteToEOL]
-                       )
-      whiteSpace: star(alt(simpleSpace comment &\r &\n preprocessor))
-
+      preprocessor:alt(
+                      ['pp_\\line'   pp_whiteSpace pp_integer pp_whiteSpace fileName whiteToEOL]#proc{$ CtxIn SemIn CtxOut SemOut}
+                                                                                                    SemOut=SemIn
+                                                                                                    if CtxIn.valid then
+                                                                                                       [_ _ L _ FN _]=SemIn in
+                                                                                                       CtxOut={CtxIn.rebind
+                                                                                                               o(file:{String.toAtom FN}
+                                                                                                                 line:L.1)}
+                                                                                                    else
+                                                                                                       CtxOut=CtxIn
+                                                                                                    end
+                                                                                                  end
+                      ['pp_\\line'   pp_whiteSpace fileName whiteToEOL]#proc{$ CtxIn SemIn CtxOut SemOut}
+                                                                           SemOut=SemIn
+                                                                           if CtxIn.valid then
+                                                                              [_ _ FN _]=SemIn in
+                                                                              CtxOut={CtxIn.rebind
+                                                                                      o(file:{String.toAtom FN})}
+                                                                           else
+                                                                              CtxOut=CtxIn
+                                                                           end
+                                                                        end
+                      ['pp_\\insert' pp_whiteSpace fileName whiteToEOL]#proc{$ CtxIn SemIn CtxOut SemOut}
+                                                                           SemOut=SemIn
+                                                                           if CtxIn.valid then
+                                                                              [_ _ FN _]=SemIn in
+                                                                              CtxOut={MkContext
+                                                                                      {ReadFile CtxIn.fileContext FN}
+                                                                                      {String.toAtom FN} 1 0 false
+                                                                                      CtxIn.grammar CtxIn.defines nil
+                                                                                      CtxIn|CtxIn.fileStack
+                                                                                      {FileContext CtxIn.fileContext FN}
+                                                                                      ctx(valid:false)
+                                                                                     }
+                                                                           else
+                                                                              CtxOut=CtxIn
+                                                                           end
+                                                                        end
+                      ['pp_\\define' pp_whiteSpace pp_variable whiteToEOL]#proc{$ CtxIn SemIn CtxOut SemOut}
+                                                                              SemOut=SemIn
+                                                                              if CtxIn.valid then
+                                                                                 [_ _ D _]=SemIn in
+                                                                                 CtxOut={CtxIn.rebind
+                                                                                         o(defines:D.1|CtxIn.defines)}
+                                                                              else
+                                                                                 CtxOut=CtxIn
+                                                                              end
+                                                                           end
+                      ['pp_\\undef'  pp_whiteSpace pp_variable whiteToEOL]#proc{$ CtxIn SemIn CtxOut SemOut}
+                                                                              SemOut=SemIn
+                                                                              if CtxIn.valid then
+                                                                                 [_ _ D _]=SemIn in
+                                                                                 CtxOut={CtxIn.rebind
+                                                                                         o(defines:{Filter
+                                                                                                    CtxIn.defines
+                                                                                                    fun{$ X}
+                                                                                                       X\=D
+                                                                                                    end})}
+                                                                              else
+                                                                                 CtxOut=CtxIn
+                                                                              end
+                                                                           end
+                      
+                      ['pp_\\ifdef'  pp_whiteSpace defined whiteToEOL]#{Nest true}
+                      ['pp_\\ifndef' pp_whiteSpace undefined whiteToEOL]#{Nest true}
+                      ['pp_\\ifdef'  pp_whiteSpace undefined whiteToEOL ignore 'pp_\\else' whiteToEOL]#{Nest false}
+                      ['pp_\\ifndef' pp_whiteSpace defined   whiteToEOL ignore 'pp_\\else' whiteToEOL]#{Nest false}
+                      
+                      ['pp_\\ifdef'  pp_whiteSpace undefined whiteToEOL ignore 'pp_\\endif' whiteToEOL]
+                      ['pp_\\ifndef' pp_whiteSpace defined   whiteToEOL ignore 'pp_\\endif' whiteToEOL]
+                      [ nestedCondE  'pp_\\else'   whiteToEOL ignore 'pp_\\endif' whiteToEOL]#Unnest
+                      [ nestedCond   'pp_\\endif'  whiteToEOL]#Unnest
+                      )
+      nestedCondE: empty#proc{$ CtxIn SemIn CtxOut SemOut}
+                            SemOut=SemIn
+                            if CtxIn.valid then
+                               CtxOut={AdjoinAt CtxIn valid CtxIn.condStack\=nil andthen CtxIn.condStack.1}
+                            else
+                               CtxOut=CtxIn
+                            end
+                         end
+      nestedCond: empty#proc{$ CtxIn SemIn CtxOut SemOut}
+                            SemOut=SemIn
+                            if CtxIn.valid then
+                               CtxOut={AdjoinAt CtxIn valid CtxIn.condStack\=nil}
+                            else
+                               CtxOut=CtxIn
+                            end
+                         end
+      defined: pp_variable#proc{$ CtxIn SemIn CtxOut SemOut}
+                            SemOut=SemIn
+                            if CtxIn.valid then
+                               CtxOut={AdjoinAt CtxIn valid {Member SemIn.1 CtxIn.defines}}
+                            else
+                               CtxOut=CtxIn
+                            end
+                         end
+      undefined: pp_variable#proc{$ CtxIn SemIn CtxOut SemOut}
+                                SemOut=SemIn
+                                if CtxIn.valid then
+                                   CtxOut={AdjoinAt CtxIn valid {Not {Member SemIn.1 CtxIn.defines}}}
+                                else
+                                   CtxOut=CtxIn
+                                end
+                             end
+      ignore: alt(
+                 [alt('pp_\\ifdef' 'pp_\\ifndef') ignore 'pp_\\else' ignore 'pp_\\endif' ignore]
+                 [alt('pp_\\ifdef' 'pp_\\ifndef') ignore 'pp_\\endif' ignore]
+                 seq1(alt(keyword
+                          [nla(alt('pp_\\ifdef' 'pp_\\ifndef' 'pp_\\else' 'pp_\\endif')) symbol]
+                          pp_string
+                          pp_character
+                          atomN
+                          variableN
+                          pp_float
+                          pp_integer
+                          simpleSpace comment &\r &\n) ignore)
+                 empty
+                 )
+      whiteSpace: star(alt(simpleSpace comment &\r &\n preprocessor popFile))
+      popFile: nla(wc)#proc{$ CtxIn SemIn CtxOut SemOut}
+                          SemOut=SemIn
+                          if CtxIn.valid andthen CtxIn.condStack==nil andthen CtxIn.fileStack\=nil then
+                             CtxOut=CtxIn.fileStack.1
+                          elseif CtxIn.valid then
+                             CtxOut={AdjoinAt CtxIn valid false}
+                          else
+                             CtxOut=CtxIn
+                          end
+                       end
       %% tokens %%
       string: seq2(whiteSpace pp_string)
       character: seq2(whiteSpace pp_character)
@@ -271,7 +435,14 @@ define
                    [pB 'declare' phrase 'in' phrase pE]#fun{$ [P1 _ S1 _ S2 P2]}fDeclare(S1 S2        {MkPos P1 P2})end
                    [pB 'declare' phrase pE]            #fun{$ [P1 _ S1      P2]}fDeclare(S1 fSkip(P2) {MkPos P1 P2})end
                    )
-      atEnd:whiteSpace %TODO
+      atEnd:[whiteSpace nla(wc)]#proc{$ CtxIn SemIn CtxOut SemOut}
+                          SemOut=SemIn
+                          if CtxIn.valid then
+                             CtxOut={AdjoinAt CtxIn valid CtxIn.condStack==nil andthen CtxIn.fileStack==nil}
+                          else
+                             CtxOut=CtxIn
+                          end
+                       end
 
       %% expressions & statements %%
       phrase:alt(
@@ -420,20 +591,31 @@ define
 
    TG={Translate {Record.adjoinList Rules RulesL}}
 
-   fun{ParseVS VS Opts}
-      CtxIn={MkContext {VirtualString.toString VS} 'top level' 1 0 false TG Opts.defines nil ctx(valid:false)}
+   fun {ParseContext CtxIn Defs}
       CtxOut
       Sem
    in
       {CtxIn.grammar.input CtxIn CtxOut Sem}
-      if CtxOut.valid andthen CtxOut.value.2==eof then
+      if CtxOut.valid then
+         {Dictionary.removeAll Defs}
+         {ForAll CtxOut.defines proc{$ D}Defs.D:=true end}
          Sem#nil
       else
          parseError#[error(kind:'parse error' msg:'Parse error')]
       end
    end
 
-   fun{ParseFile FileName Opts}
-      {ParseVS "\\insert "#FileName#"\n" Opts}
+   fun{ParseVS VS Opts}
+      CtxIn={MkContext {VirtualString.toString VS}
+             'top level' 1 0 false TG {Dictionary.keys Opts.defines} nil nil "./" ctx(valid:false)}
+   in
+      {ParseContext CtxIn Opts.defines}
+   end
+
+   fun{ParseFile FN Opts}
+      CtxIn={MkContext {ReadFile "./" {VirtualString.toString FN}}
+             {VirtualString.toAtom FN} 1 0 false TG {Dictionary.keys Opts.defines} nil nil "./" ctx(valid:false)}
+   in
+      {ParseContext CtxIn Opts.defines}
    end
 end
