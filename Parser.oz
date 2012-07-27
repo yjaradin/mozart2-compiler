@@ -267,7 +267,7 @@ define
                    [pB 'declare' phrase 'in' phrase pE]#fun{$ [P1 _ S1 _ S2 P2]}fDeclare(S1 S2        {MkPos P1 P2})end
                    [pB 'declare' phrase pE]            #fun{$ [P1 _ S1      P2]}fDeclare(S1 fSkip(P2) {MkPos P1 P2})end
                    )
-      atEnd:empty %TODO
+      atEnd:whiteSpace %TODO
 
       %% expressions & statements %%
       phrase:alt(
@@ -417,11 +417,14 @@ define
 
    fun{ParseVS VS Opts}
       CtxIn={MkContext {VirtualString.toString VS} 'top level' 1 0 false TG Opts.defines nil ctx(valid:false)}
+      CtxOut
+      Sem
    in
-      try
-         {CtxIn.grammar.input CtxIn _}#nil
-      catch _ then
-         parseError#nil
+      {CtxIn.grammar.input CtxIn CtxOut Sem}
+      if CtxOut.valid andthen CtxOut.value==eof then
+         Sem#nil
+      else
+         parseError#[error(kind:'parse error' msg:'Parse error')]
       end
    end
 
