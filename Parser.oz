@@ -542,6 +542,10 @@ define
                    opt([pB 'catch' caseClauses pE]#fun{$ [P1 _ Cs P2]}fCatch(Cs {MkPos P1 P2})end fNoCatch)
                    opt(seq2('finally' inPhrase) fNoFinally)
                    pE]#fun{$ [P1 _ S C F P2]}fTry(S C F {MkPos P1 P2})end
+                  [pB 'cond' condClauses optElse 'end' pE]#fun{$ [P1 _ Cs E _ P2]}fCond(Cs E {MkPos P1 P2})end
+                  [pB 'dis' disClauses 'end' pE]#fun{$ [P1 _ Cs _ P2]}fDis(Cs {MkPos P1 P2})end
+                  [pB 'or' disClauses 'end' pE]#fun{$ [P1 _ Cs _ P2]}fOr(Cs {MkPos P1 P2})end
+                  [pB 'choice' sep(inPhrase '[]')'end' pE]#fun{$ [P1 _ Ss _ P2]}fChoice(Ss {MkPos P1 P2})end
                   [pB 'raise' inPhrase 'end' pE]#fun{$ [P1 _ S _ P2]}fRaise(S {MkPos P1 P2})end
                   ['[' plus([lvl0 pE]) pB ']']#fun{$ [_ Ss P _]}
                                                   {FoldR Ss fun{$ [H P] T}
@@ -554,14 +558,25 @@ define
                                                                                         LL(L Ts)
                                                                                      end
                   [pB 'skip' pE]#fun{$ [P1 _ P2]}fSkip({MkPos P1 P2})end
+                  [pB 'fail' pE]#fun{$ [P1 _ P2]}fFail({MkPos P1 P2})end
                   [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
                   [pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
                   string
                   float
                   feature
                   )
-      internalIf:[phrase 'then' inPhrase optElse]#fun{$ [S1 _ S2 S3]}fBoolCase(S1 S2 S3 unit)end
-      internalCase:[phrase 'of' caseClauses optElse]#fun{$ [S1 _ Cs S2]}fCase(S1 Cs S2 unit)end
+      internalIf:[phrase 'then' inPhrase optElse2]#fun{$ [S1 _ S2 S3]}fBoolCase(S1 S2 S3 unit)end
+      internalCase:[phrase 'of' caseClauses optElse2]#fun{$ [S1 _ Cs S2]}fCase(S1 Cs S2 unit)end
+      condClauses:sep(alt(
+                         [phrase 'in' phrase 'then' phrase]#fun{$ [S1 _ S2 _ S3]}fClause(S1 S2 S3)end
+                         [pB phrase 'then' phrase]#fun{$ [P S1 _ S2]}fClause(fSkip(P) S1 S2)end
+                         ) '[]')
+      disClauses:sep(alt(
+                        [phrase 'in' phrase 'then' phrase]#fun{$ [S1 _ S2 _ S3]}fClause(S1 S2 S3)end
+                        [pB phrase 'then' phrase]#fun{$ [P S1 _ S2]}fClause(fSkip(P) S1 S2)end
+                        [phrase 'in' phrase pE]#fun{$ [S1 _ S2 P]}fClause(S1 S2 fNoThen(P))end
+                        [pB phrase pE]#fun{$ [P1 S1 P2]}fClause(fSkip(P1) S1 fNoThen(P2))end
+                        ) '[]')
       caseClauses:alt(
                      caseClause|seq2(alt('[]' 'elseof') caseClauses)
                      [caseClause]
@@ -570,9 +585,12 @@ define
                   [pB phrase 'in' phrase pE]#fun{$ [P1 S1 _ S2 P2]}fLocal(S1 S2 {MkPos P1 P2})end
                   phrase
                   )
+      optElse2:alt(
+                  [pB 'elseif' internalIf pE]#fun{$ [P1 _ S P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
+                  [pB 'elsecase' internalCase pE]#fun{$ [P1 _ S P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
+                  optElse
+                  )
       optElse:alt(
-                 [pB 'elseif' internalIf pE]#fun{$ [P1 _ S P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
-                 [pB 'elsecase' internalCase pE]#fun{$ [P1 _ S P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
                  seq2('else' inPhrase)
                  pE#fun{$ P}fNoElse(P)end
                  )
