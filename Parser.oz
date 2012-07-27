@@ -421,7 +421,7 @@ define
       Sem
    in
       {CtxIn.grammar.input CtxIn CtxOut Sem}
-      if CtxOut.valid andthen CtxOut.value==eof then
+      if CtxOut.valid andthen CtxOut.value.2==eof then
          Sem#nil
       else
          parseError#[error(kind:'parse error' msg:'Parse error')]
