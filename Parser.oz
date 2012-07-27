@@ -175,8 +175,12 @@ define
                 [nla(keyword) pos lcLetter star(alNum) pos] #fun{$ [_ P1 H T P2]} fAtom({String.toAtom H|T} {MkPos P1 P2}) end
                 [pos &' star(atomChar) &' pos]              #fun{$ [P1 _ L _ P2]} fAtom({String.toAtom L  } {MkPos P1 P2}) end
                 )
-      pp_string: [pos &" star(atomChar) &" pos] #fun{$ [P1 _ L _ P2]} fString(L {MkPos P1 P2}) end
-      pp_character: [pos && alt(seq2(nla(alt(&\\ 0)) wc) pseudoChar) pos] #fun{$ [P1 _ C P2]} fChar(C {MkPos P1 P2}) end
+      pp_string: [&" star([pos stringChar pos]) &" pos] #fun{$ [_ L _ P]}
+                                                      {FoldR L fun{$ [P1 C P2] S}
+                                                                  fRecord(fAtom('|' P2) [fInt(C {MkPos P1 P2}) S])
+                                                               end fAtom(nil P)}
+                                                   end
+      pp_character: [pos && alt(seq2(nla(alt(&\\ 0)) wc) pseudoChar) pos] #fun{$ [P1 _ C P2]} fInt(C {MkPos P1 P2}) end
       pp_atom: seq1(atomN nla(&())
       pp_variable: seq1(variableN nla(&())
       pp_kwValue:seq1(alt('pp_true' 'pp_false' 'pp_unit') nla(&())
@@ -337,9 +341,9 @@ define
               [pB '~' lvlC pE]#fun{$ [P1 _ S1 P2]}fOpApply('~' [S1] {MkPos P1 P2})end
               lvlC
               )
-      dotted:[lvlD plus(
-                      [alt('.' '^') alt(feature lvlD)]#fun{$ [Op S2 P2]}fun{$ P1 S1}fOpApply(Op.1 [S1 S2] {MkPos P1 P2})end end
-                      )]#fun{$ [P1 S1 Ms]}{FoldL Ms fun{$ S M}{M P1 S}end S1}end
+      dotted:[pB lvlD plus(
+                         [alt('.' '^') alt(feature lvlD) pE]#fun{$ [Op S2 P2]}fun{$ P1 S1}fOpApply(Op.1 [S1 S2] {MkPos P1 P2})end end
+                         )]#fun{$ [P1 S1 Ms]}{FoldL Ms fun{$ S M}{M P1 S}end S1}end
       lvlC:alt(
               dotted
               lvlD
@@ -381,6 +385,7 @@ define
                   [pB 'skip' pE]#fun{$ [P1 _ P2]}fSkip({MkPos P1 P2})end
                   [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
                   [pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
+                  string
                   float
                   feature
                   )
