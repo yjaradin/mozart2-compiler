@@ -191,7 +191,7 @@ define
                       &0|alt(&x &X)|plus(hexDigit)
                       &0|alt(&b &B)|plus(binDigit)
                       )
-                   pos] #fun{$ [P1 _ S L P2]} fInt({String.toInt {Append S L}} {MkPos P1 P2}) end
+                   pos] #fun{$ [P1 S L P2]} fInt({String.toInt {Append S L}} {MkPos P1 P2}) end
       pp_float: [pos
                  opt("~")
                  plus(digit)
