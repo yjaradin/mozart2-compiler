@@ -537,6 +537,7 @@ define
                   [pB 'if' internalIf 'end' pE]#fun{$ [P1 _ S _ P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
                   [pB 'case' internalCase 'end' pE]#fun{$ [P1 _ S _ P2]}{AdjoinAt S 4 {MkPos P1 P2}}end
                   [pB 'lock' phrase 'then' inPhrase 'end' pE]#fun{$ [P1 _ S1 _ S2 _ P2]}fLockThen(S1 S2 {MkPos P1 P2})end
+                  [pB 'lock' inPhrase 'end' pE]#fun{$ [P1 _ S1 _ P2]}fLock(S1 {MkPos P1 P2})end
                   [pB 'thread' inPhrase 'end' pE]#fun{$ [P1 _ S _ P2]}fThread(S {MkPos P1 P2})end
                   [pB 'try' inPhrase
                    opt([pB 'catch' caseClauses pE]#fun{$ [P1 _ Cs P2]}fCatch(Cs {MkPos P1 P2})end fNoCatch)
@@ -547,26 +548,66 @@ define
                   [pB 'or' disClauses 'end' pE]#fun{$ [P1 _ Cs _ P2]}fOr(Cs {MkPos P1 P2})end
                   [pB 'choice' sep(inPhrase '[]')'end' pE]#fun{$ [P1 _ Ss _ P2]}fChoice(Ss {MkPos P1 P2})end
                   [pB 'raise' inPhrase 'end' pE]#fun{$ [P1 _ S _ P2]}fRaise(S {MkPos P1 P2})end
+                  [pB 'class' alt(lvl0 pE#fun{$ P}fDollar(P)end) star(classDescr) star(method) 'end' pE]#fun{$ [P1 _ S Ds Ms _ P2]}
+                                                                                                            fClass(S Ds Ms {MkPos P1 P2})
+                                                                                                         end
                   ['[' plus([lvl0 pE]) pB ']']#fun{$ [_ Ss P _]}
                                                   {FoldR Ss fun{$ [H P] T}
                                                                fRecord(fAtom('|' P) [H T])
                                                             end fAtom('nil' P)}
                                                end
-                  [pB '!' variable pE]#fun{$ [P1 _ V P2]}fEscape(V {MkPos P1 P2})end
                   [alt(atomL variableL kwValueL) '(' star(subtree) opt(['...']) ')']#fun{$ [L _ Ts D _]}
                                                                                         LL=if D==nil then fRecord else fOpenRecord end in
                                                                                         LL(L Ts)
                                                                                      end
                   [pB 'skip' pE]#fun{$ [P1 _ P2]}fSkip({MkPos P1 P2})end
                   [pB 'fail' pE]#fun{$ [P1 _ P2]}fFail({MkPos P1 P2})end
-                  [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
-                  [pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
+                  [pB 'self' pE]#fun{$ [P1 _ P2]}fSelf({MkPos P1 P2})end                  
+                  dollar
+                  underscore
                   string
                   float
                   feature
+                  escVar
                   )
+      dollar:[pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
+      underscore: [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
+      escVar: [pB '!' variable  pE]#fun{$ [P1 _ V P2]}fEscape(V {MkPos P1 P2})end
+      escVarL:[pB '!' variableL pE]#fun{$ [P1 _ V P2]}fEscape(V {MkPos P1 P2})end
       internalIf:[phrase 'then' inPhrase optElse2]#fun{$ [S1 _ S2 S3]}fBoolCase(S1 S2 S3 unit)end
       internalCase:[phrase 'of' caseClauses optElse2]#fun{$ [S1 _ Cs S2]}fCase(S1 Cs S2 unit)end
+      classDescr:alt(
+                    [pB 'from' plus(lvl0) pE]#fun{$ [P1 _ Ss P2]}fFrom(Ss {MkPos P1 P2})end
+                    [pB 'prop' plus(lvl0) pE]#fun{$ [P1 _ Ss P2]}fProp(Ss {MkPos P1 P2})end
+                    [pB 'attr' plus(attrOrFeat) pE]#fun{$ [P1 _ As P2]}fAttr(As {MkPos P1 P2})end
+                    [pB 'feat' plus(attrOrFeat) pE]#fun{$ [P1 _ As P2]}fFeat(As {MkPos P1 P2})end
+                    )
+      attrOrFeat:[alt(escVar feature) opt([':' lvl0])]#fun{$ K V}
+                                                          if V==nil then K
+                                                          else K#V.2.1
+                                                          end
+                                                       end
+      method:[pB 'meth' methodHead inPhrase 'end' pE]#fun{$ [P1 _ H S _ P2]}
+                                                         fMeth(H S {MkPos P1 P2})
+                                                      end
+      methodHead:alt([pB methodHead1 '=' variable pE]#fun{$ P1 S1 _ S2 P2}
+                                                         fEq(S1 S2 {MkPos P1 P2})
+                                                      end
+                     methodHead1)
+      methodHead1:alt(
+                     atom variable kwValue escVar
+                     [alt(atomL variableL kwValueL escVarL)
+                      '(' star(methFormal) opt(['...']) ')']#fun{$ [L _ Ts D _]}
+                                                                LL=if D==nil then fRecord else fOpenRecord end in
+                                                                LL(L Ts)
+                                                             end
+                     )
+      methFormal:alt(
+                    [feature ':' methFormAt opt(methDefault fNoDefault)]#fun{$ [F _ A D]}fMethColonArg(F A D)end
+                    [methFormAt opt(methDefault fNoDefault)]#fun{$ [A D]}fMethArg(A D)end
+                    )
+      methFormAt:alt(variable dollar underscore)
+      methDefault:[pB '<=' lvl0 pE]#fun{$ [P1 _ S P2]}fDefault(S {MkPos P1 P2}) end
       condClauses:sep(alt(
                          [phrase 'in' phrase 'then' phrase]#fun{$ [S1 _ S2 _ S3]}fClause(S1 S2 S3)end
                          [pB phrase 'then' phrase]#fun{$ [P S1 _ S2]}fClause(fSkip(P) S1 S2)end
