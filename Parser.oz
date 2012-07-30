@@ -93,9 +93,9 @@ define
    end
    OzKW=["true" "false" "unit"
          "andthen" "at" "attr" "case" "catch" "choice"
-         "class" "cond" "declare" "define" "dis"
+         "class" "cond" "declare" "define" "dis" "do"
          "div" "else" "elsecase" "elseif" "elseof" "end"
-         "export" "fail" "feat" "finally" "from"
+         "export" "fail" "feat" "finally" "from" "for"
          "fun" "functor" "if" "import" "in" "local"
          "lock" "meth" "mod" "not" "of" "or" "orelse"
          "prepare" "proc" "prop" "raise" "require"
@@ -558,6 +558,7 @@ define
                   [pB 'functor' exprOrImplDollar star(funcDescr) 'end' pE]#fun{$ [P1 _ S Ds _ P2]}
                                                                               fFunctor(S Ds {MkPos P1 P2})
                                                                            end
+                  [pB 'for' star(forDecl) 'do' inPhrase 'end' pE]#fun{$ [P1 _ Ds _ S _ P2]}fFOR(Ds S {MkPos P1 P2})end
                   ['[' plus([lvl0 pE]) pB ']']#fun{$ [_ Ss P _]}
                                                   {FoldR Ss fun{$ [H P] T}
                                                                fRecord(fAtom('|' P) [H T])
@@ -577,6 +578,21 @@ define
                   feature
                   escVar
                   )
+      forDecl:alt(
+                 [lvl0 'in' forGen]#fun{$ [A _ S]}forPattern(A S)end
+                 [lvl0 'from' lvl0]#fun{$ [A _ S]}forFrom(A S)end
+                 [atom ':' lvl0]#fun{$ [A _ S]}forFeature(A S)end
+                 atom#fun{$ A}forFlag(A)end
+                 )
+      forGen:alt(
+                [lvl0 '..' lvl0 opt(seq2(';' lvl0) unit)]#fun{$ [S1 _ S2 S3]}forGeneratorInt(S1 S2 S3)end
+                ['(' forGenC ')']#fun{$ [_ S _]}S end
+                forGenC
+                lvl0#fun{$ S}forGeneratorList(S)end
+                )
+      forGenC:alt(
+                 [lvl0 ';' lvl0 opt(seq2(';' lvl0) unit)]#fun{$ [S1 _ S2 S3]}forGeneratorC(S1 S2 S3) end
+                 )
       exprOrImplDollar:alt(lvl0 pE#fun{$ P}fDollar(P)end)
       dollar:[pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
       underscore: [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
