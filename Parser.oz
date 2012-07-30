@@ -38,7 +38,11 @@ define
       end
    end
    fun{ReadFile Context FN}
-      {{New Open.file init(name:{FileName Context FN})} read(list:$ size:all)}
+      try
+         {{New Open.file init(name:{FileName Context FN})} read(list:$ size:all)}
+      catch system(os(os "open" 2 ...) ...) then
+         {{New Open.file init(name:{Append {FileName Context FN} ".oz"})} read(list:$ size:all)}
+      end
    end
    fun{FileContext Context FN}
       {Reverse {List.dropWhile {Reverse {FileName Context FN}} fun{$ C}C\=&/ end}}
@@ -436,13 +440,13 @@ define
                    [pB 'declare' phrase pE]            #fun{$ [P1 _ S1      P2]}fDeclare(S1 fSkip(P2) {MkPos P1 P2})end
                    )
       atEnd:[whiteSpace nla(wc)]#proc{$ CtxIn SemIn CtxOut SemOut}
-                          SemOut=SemIn
-                          if CtxIn.valid then
-                             CtxOut={AdjoinAt CtxIn valid CtxIn.condStack==nil andthen CtxIn.fileStack==nil}
-                          else
-                             CtxOut=CtxIn
-                          end
-                       end
+                                    SemOut=SemIn
+                                    if CtxIn.valid then
+                                       CtxOut={AdjoinAt CtxIn valid CtxIn.condStack==nil andthen CtxIn.fileStack==nil}
+                                    else
+                                       CtxOut=CtxIn
+                                    end
+                                 end
 
       %% expressions & statements %%
       phrase:alt(
@@ -542,15 +546,18 @@ define
                   [pB 'try' inPhrase
                    opt([pB 'catch' caseClauses pE]#fun{$ [P1 _ Cs P2]}fCatch(Cs {MkPos P1 P2})end fNoCatch)
                    opt(seq2('finally' inPhrase) fNoFinally)
-                   pE]#fun{$ [P1 _ S C F P2]}fTry(S C F {MkPos P1 P2})end
+                   'end' pE]#fun{$ [P1 _ S C F _ P2]}fTry(S C F {MkPos P1 P2})end
                   [pB 'cond' condClauses optElse 'end' pE]#fun{$ [P1 _ Cs E _ P2]}fCond(Cs E {MkPos P1 P2})end
                   [pB 'dis' disClauses 'end' pE]#fun{$ [P1 _ Cs _ P2]}fDis(Cs {MkPos P1 P2})end
                   [pB 'or' disClauses 'end' pE]#fun{$ [P1 _ Cs _ P2]}fOr(Cs {MkPos P1 P2})end
                   [pB 'choice' sep(inPhrase '[]')'end' pE]#fun{$ [P1 _ Ss _ P2]}fChoice(Ss {MkPos P1 P2})end
                   [pB 'raise' inPhrase 'end' pE]#fun{$ [P1 _ S _ P2]}fRaise(S {MkPos P1 P2})end
-                  [pB 'class' alt(lvl0 pE#fun{$ P}fDollar(P)end) star(classDescr) star(method) 'end' pE]#fun{$ [P1 _ S Ds Ms _ P2]}
+                  [pB 'class' exprOrImplDollar star(classDescr) star(method) 'end' pE]#fun{$ [P1 _ S Ds Ms _ P2]}
                                                                                                             fClass(S Ds Ms {MkPos P1 P2})
                                                                                                          end
+                  [pB 'functor' exprOrImplDollar star(funcDescr) 'end' pE]#fun{$ [P1 _ S Ds _ P2]}
+                                                                              fFunctor(S Ds {MkPos P1 P2})
+                                                                           end
                   ['[' plus([lvl0 pE]) pB ']']#fun{$ [_ Ss P _]}
                                                   {FoldR Ss fun{$ [H P] T}
                                                                fRecord(fAtom('|' P) [H T])
@@ -570,19 +577,39 @@ define
                   feature
                   escVar
                   )
+      exprOrImplDollar:alt(lvl0 pE#fun{$ P}fDollar(P)end)
       dollar:[pB '$' pE]#fun{$ [P1 _ P2]}fDollar({MkPos P1 P2})end
       underscore: [pB '_' pE]#fun{$ [P1 _ P2]}fWildcard({MkPos P1 P2})end
       escVar: [pB '!' variable  pE]#fun{$ [P1 _ V P2]}fEscape(V {MkPos P1 P2})end
       escVarL:[pB '!' variableL pE]#fun{$ [P1 _ V P2]}fEscape(V {MkPos P1 P2})end
       internalIf:[phrase 'then' inPhrase optElse2]#fun{$ [S1 _ S2 S3]}fBoolCase(S1 S2 S3 unit)end
       internalCase:[phrase 'of' caseClauses optElse2]#fun{$ [S1 _ Cs S2]}fCase(S1 Cs S2 unit)end
+      funcDescr:alt(
+                   [pB 'import' plus(importDecl) pE]#fun{$ [P1 _ Ds P2]}fImport(Ds {MkPos P1 P2})end
+                   [pB 'define' phrase alt(seq2('in' phrase) pE#fun{$ P}fSkip(P)end) pE]#fun{$ [P1 _ D S P2]}
+                                                                                            fDefine(D S {MkPos P1 P2})
+                                                                                          end
+                   [pB 'require' plus(importDecl) pE]#fun{$ [P1 _ Ds P2]}fRequire(Ds {MkPos P1 P2})end
+                   [pB 'prepare' phrase alt(seq2('in' phrase) pE#fun{$ P}fSkip(P)end) pE]#fun{$ [P1 _ D S P2]}
+                                                                                             fPrepare(D S {MkPos P1 P2})
+                                                                                          end
+                   [pB 'export' plus(exportDecl) pE]#fun{$ [P1 _ Ds P2]}fExport(Ds {MkPos P1 P2})end
+                   )
+      importDecl:alt([variable optAt]#fun{$ [V A]}fImportItem(V nil A)end
+                     [variableL '(' plus(alt([alt(integer atom) ':' variable]#fun{$ [F _ V]}V#F end
+                                             integer atom
+                                            )) ')' optAt]#fun{$ [V _ Fs _ A]}fImportItem(V Fs A)end
+                     )
+      optAt:opt(seq2('at' atom)#fun{$ A}fImportAt(A)end fNoImportAt)
+      exportDecl:alt([alt(atom integer) ':' variable]#fun{$ [F _ V]}fColon(F V)end
+                     variable)#fun{$ I}fExportItem(I)end
       classDescr:alt(
                     [pB 'from' plus(lvl0) pE]#fun{$ [P1 _ Ss P2]}fFrom(Ss {MkPos P1 P2})end
                     [pB 'prop' plus(lvl0) pE]#fun{$ [P1 _ Ss P2]}fProp(Ss {MkPos P1 P2})end
                     [pB 'attr' plus(attrOrFeat) pE]#fun{$ [P1 _ As P2]}fAttr(As {MkPos P1 P2})end
                     [pB 'feat' plus(attrOrFeat) pE]#fun{$ [P1 _ As P2]}fFeat(As {MkPos P1 P2})end
                     )
-      attrOrFeat:[alt(escVar feature) opt([':' lvl0])]#fun{$ K V}
+      attrOrFeat:[alt(escVar feature) opt([':' lvl0])]#fun{$ [K V]}
                                                           if V==nil then K
                                                           else K#V.2.1
                                                           end
@@ -590,7 +617,7 @@ define
       method:[pB 'meth' methodHead inPhrase 'end' pE]#fun{$ [P1 _ H S _ P2]}
                                                          fMeth(H S {MkPos P1 P2})
                                                       end
-      methodHead:alt([pB methodHead1 '=' variable pE]#fun{$ P1 S1 _ S2 P2}
+      methodHead:alt([pB methodHead1 '=' variable pE]#fun{$ [P1 S1 _ S2 P2]}
                                                          fEq(S1 S2 {MkPos P1 P2})
                                                       end
                      methodHead1)
